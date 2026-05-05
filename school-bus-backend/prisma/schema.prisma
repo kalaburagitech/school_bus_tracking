@@ -1,0 +1,230 @@
+// Multi-tenant school transport — shared schema, row isolation via tenantId
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  SCHOOL_ADMIN
+  DRIVER
+  PARENT
+  STUDENT
+  STAFF
+}
+
+enum TripStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum AttendanceType {
+  PICKUP
+  DROPOFF
+}
+
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum UserOperationalStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Tenant {
+  id               String           @id @default(cuid())
+  name             String
+  slug             String           @unique
+  code             String?          @unique
+  contactPerson    String?
+  phone            String?
+  email            String?
+  address          String?
+  city             String?
+  state            String?
+  status           TenantStatus     @default(ACTIVE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  users            User[]
+  buses            Bus[]
+  routes           Route[]
+  students         Student[]
+  busStaffAssignments BusStaffAssignment[]
+  trips            Trip[]
+  attendanceLogs   AttendanceLog[]
+  locationSamples  LocationSample[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  phone        String    @unique
+  email        String?
+  passwordHash String?
+  role         Role
+  name         String?
+  licenseNo    String?
+  experienceYears Int?
+  operationalStatus UserOperationalStatus @default(ACTIVE)
+  tenantId     String?
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
+
+  refreshTokens RefreshToken[]
+  drivenBuses   Bus[]         @relation("BusDriver")
+  tripsAsDriver Trip[]        @relation("DriverTrips")
+  students      Student[]     @relation("ParentStudents")
+  staffBusAssignments BusStaffAssignment[]
+
+  @@index([tenantId])
+  @@index([role, tenantId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Route {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  waypoints Json?
+  buses     Bus[]
+
+  @@index([tenantId])
+}
+
+model Bus {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+  registrationNumber   String
+  busNumber            String?
+  vehicleNumber        String?
+  capacity             Int      @default(40)
+  driverUserId         String?
+  driver               User?    @relation("BusDriver", fields: [driverUserId], references: [id])
+  routeId              String?
+  route                Route?   @relation(fields: [routeId], references: [id])
+  active               Boolean  @default(true)
+  isDeleted            Boolean  @default(false)
+  deletedAt            DateTime?
+  updatedAt            DateTime @updatedAt
+  students             Student[]
+  staffAssignments     BusStaffAssignment[]
+  trips                Trip[]
+
+  @@index([tenantId])
+  @@index([tenantId, driverUserId])
+}
+
+model Student {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  name         String
+  studentClass String?
+  address      String?
+  latitude     Float?
+  longitude    Float?
+  busId        String?
+  bus          Bus?     @relation(fields: [busId], references: [id])
+  parentUserId String?
+  parent       User?    @relation("ParentStudents", fields: [parentUserId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  isDeleted    Boolean  @default(false)
+  deletedAt    DateTime?
+
+  attendanceLogs AttendanceLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, busId])
+  @@index([tenantId, parentUserId])
+}
+
+model Trip {
+  id              String           @id @default(cuid())
+  tenantId        String
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  busId           String
+  bus             Bus              @relation(fields: [busId], references: [id])
+  driverUserId    String
+  driver          User             @relation("DriverTrips", fields: [driverUserId], references: [id])
+  status          TripStatus       @default(SCHEDULED)
+  startedAt       DateTime?
+  endedAt         DateTime?
+  createdAt       DateTime         @default(now())
+
+  locationSamples LocationSample[]
+  attendanceLogs  AttendanceLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, busId])
+  @@index([tenantId, status])
+}
+
+model LocationSample {
+  id               String   @id @default(cuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  tripId           String
+  trip             Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  latitude         Float
+  longitude        Float
+  recordedAt       DateTime @default(now())
+  idempotencyKey   String?
+
+  @@unique([tripId, idempotencyKey])
+  @@index([tenantId, tripId])
+  @@index([tenantId, recordedAt])
+}
+
+model AttendanceLog {
+  id         String         @id @default(cuid())
+  tenantId   String
+  tenant     Tenant         @relation(fields: [tenantId], references: [id])
+  tripId     String
+  trip       Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    Student        @relation(fields: [studentId], references: [id])
+  type       AttendanceType
+  recordedAt DateTime       @default(now())
+
+  @@index([tenantId, tripId])
+  @@index([tenantId, studentId, recordedAt])
+}
+
+model BusStaffAssignment {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  busId     String
+  bus       Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  staffId   String
+  staff     User     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([busId, staffId])
+  @@index([tenantId, busId])
+  @@index([tenantId, staffId])
+}

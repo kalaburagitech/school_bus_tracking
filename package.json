@@ -1,0 +1,13 @@
+{
+  "name": "school-bus-tracking-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "school-bus-backend",
+    "school-bus-admin-dashboard",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run -w school-bus-backend build && npm run -w school-bus-admin-dashboard build"
+  }
+}

@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: School Bus Tracking API
+  version: 1.0.0
+  description: |
+    Multi-tenant school transport backend. Prefer the live spec at `/docs` (Swagger UI)
+    when the server is running.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Liveness
+      responses:
+        '200':
+          description: OK
+  /auth/request-otp:
+    post:
+      summary: Request OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone: { type: string, example: '+10000000003' }
+      responses:
+        '200': { description: OTP stored in Redis }
+  /auth/verify-otp:
+    post:
+      summary: Verify OTP and get JWTs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone: { type: string }
+                code: { type: string }
+                impersonateTenantId: { type: string, nullable: true }
+      responses:
+        '200': { description: Tokens issued }
+  /driver/trips/start:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Start driver trip
+      responses:
+        '201': { description: Trip created or reused }
+  /parent/bus/live:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Live buses for parent's children
+      responses:
+        '200': { description: Redis + DB snapshot }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
